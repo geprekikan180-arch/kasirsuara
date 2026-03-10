@@ -80,7 +80,7 @@
                                 <th class="px-6 py-4 font-semibold text-gray-700">Harga Jual</th>
                                 <th class="px-6 py-4 font-semibold text-gray-700 text-center">Stok</th>
                                 <th class="px-6 py-4 font-semibold text-gray-700">Status</th>
-                                <th class="px-6 py-4 font-semibold text-gray-700">kondisi</th>
+                                <th class="px-6 py-4 font-semibold text-gray-700">Masalah Minggu Ini</th>
                                 <th class="px-6 py-4 font-semibold text-gray-700">Aksi</th>
                             </tr>
                         </thead>
@@ -152,16 +152,19 @@
                                     <div class="font-semibold text-gray-800">{{ $product->current_condition }}</div>
                                 </td> --}}
                                 <td class="px-6 py-4">
-                                    @switch($product->current_condition ?? 'good')
-                                        @case('good')
-                                            <span class="inline-block px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">Baik</span>
-                                            @break
-                                        @case('damaged')
-                                            <span class="inline-block px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold">Rusak</span>
-                                            @break
-                                        @default
-                                            <span class="inline-block px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-semibold">Basi</span>
-                                    @endswitch
+                                    @php
+                                        $d = $product->weekly_damaged ?? 0;
+                                        $e = $product->weekly_expired ?? 0;
+                                    @endphp
+                                    @if($d > 0 && $e > 0)
+                                        <span class="text-red-600 text-sm font-semibold">{{ $d }} rusak, {{ $e }} basi</span>
+                                    @elseif($d > 0)
+                                        <span class="text-red-600 text-sm font-semibold">{{ $d }} rusak</span>
+                                    @elseif($e > 0)
+                                        <span class="text-red-600 text-sm font-semibold">{{ $e }} basi</span>
+                                    @else
+                                        <span class="text-green-600 text-sm font-semibold">0 bermasalah</span>
+                                    @endif
                                 </td>
                                 <td class="px-6 py-4">
                                     <div class="flex gap-2">

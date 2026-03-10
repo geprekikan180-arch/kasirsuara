@@ -173,7 +173,7 @@
                                     <th class="py-3 px-2 text-sm">No.</th>
                                     <th class="py-3 px-2 text-sm">Kode Barang</th>
                                     <th class="py-3 px-2 text-sm">Nama Barang</th>
-                                    <th class="py-3 px-2 text-sm">Kondisi</th>
+                                    <th class="py-3 px-2 text-sm">Masalah Minggu Ini</th>
                                     <th class="py-3 px-2 text-sm">Sisa Stok</th>
                                 </tr>
                             </thead>
@@ -201,16 +201,16 @@
                                 <td class="py-3.5 font-mono text-gray-500">{{ $item->code }}</td>
                                 <td class="py-3.5 font-bold">{{ $item->name }}</td>                                
                                 <td class="px-6 py-4">
-                                    @switch($product->current_condition ?? 'good')
-                                        @case('good')
-                                            <span class="inline-block px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">Baik</span>
-                                            @break
-                                        @case('damaged')
-                                            <span class="inline-block px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold">Rusak</span>
-                                            @break
-                                        @default
-                                            <span class="inline-block px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-semibold">Basi</span>
-                                    @endswitch
+                                    @php
+                                        $problems = $data['weekly_problems'][$item->id] ?? 0;
+                                    @endphp
+                                    @if($problems == 0)
+                                        <span class="text-green-600 text-sm font-semibold">0 bermasalah</span>
+                                    @elseif($problems > 0)
+                                        <span class="text-red-600 text-sm font-semibold">{{ $problems }} bermasalah</span>
+                                    @else
+                                        <span class="text-black text-sm font-semibold">0 bermasalah</span>
+                                    @endif
                                 </td>
                                 <td class="py-3.5">
                                     <div class="{{ $bgClass }} py-1 px-3 rounded-full inline-block text-xs font-bold shadow-sm">

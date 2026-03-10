@@ -41,6 +41,16 @@ class OwnerController extends Controller
                               ->limit(5)
                               ->get();
 
+        // hitung jumlah rusak/basi minggu ini per produk
+        $weekStart = Carbon::now()->startOfWeek();
+        $weeklyProblems = [];
+        foreach ($stokMenipis as $prod) {
+            $count = \App\Models\DamagedGood::where('product_id', $prod->id)
+                        ->where('created_at', '>=', $weekStart)
+                        ->sum('quantity');
+            $weeklyProblems[$prod->id] = $count;
+        }
+
         // 4. Hitung TOTAL PENDAPATAN (Sum kolom total_amount)
         $pendapatan = Transaction::where('shop_id', $shopId)->sum('total_amount');
 
@@ -72,7 +82,8 @@ class OwnerController extends Controller
             'lama_gabung' => $lamaGabung,
             'pendapatan' => number_format($pendapatan, 0, ',', '.'),
             'karyawan' => $karyawan,
-            'stok_menipis' => $stokMenipis
+            'stok_menipis' => $stokMenipis,
+            'weekly_problems' => $weeklyProblems,
         ];
 
         // LOGIKA DIAGRAM: Ambil data 7 hari terakhir
@@ -142,6 +153,19 @@ class OwnerController extends Controller
 
         $products = $query->paginate(10);
         
+        // weekly problem counts per product
+        $weekStart = Carbon::now()->startOfWeek();
+        foreach ($products as $prod) {
+            $prod->weekly_damaged = \App\Models\DamagedGood::where('product_id', $prod->id)
+                                        ->where('type','damaged')
+                                        ->where('created_at', '>=', $weekStart)
+                                        ->sum('quantity');
+            $prod->weekly_expired = \App\Models\DamagedGood::where('product_id', $prod->id)
+                                        ->where('type','expired')
+                                        ->where('created_at', '>=', $weekStart)
+                                        ->sum('quantity');
+        }
+
         // Get categories untuk dropdown filter
         $categories = Category::where('shop_id', $shopId)->pluck('name');
 

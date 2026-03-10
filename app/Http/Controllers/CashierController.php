@@ -160,12 +160,15 @@ class CashierController extends Controller
     public function getCategories()
     {
         $shopId = Auth::user()->shop_id;
-        
-        // Ambil semua kategori yang dimiliki toko ini (dari tabel categories)
+
+        // pilih lima kategori dengan produk terbanyak di toko ini
         $categories = \App\Models\Category::where('shop_id', $shopId)
-                        ->pluck('name')
-                        ->sort()
-                        ->values();
+            ->withCount(['products' => function($q) use ($shopId) {
+                $q->where('shop_id', $shopId);
+            }])
+            ->orderByDesc('products_count')
+            ->limit(5)
+            ->pluck('name');
 
         return response()->json([
             'status' => 'success',

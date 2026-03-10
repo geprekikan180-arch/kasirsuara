@@ -630,20 +630,19 @@
         const editor = document.getElementById('smart-editor');
         let text = editor.innerText;
 
-        // 1. AMBIL DATA DASAR (Kode & Stok)
+        // 1. PERBAIKAN REGEX: Pakai Lookahead (?=...) agar bisa mendeteksi kata meskipun urutannya acak
+        // Menangkap Kode, Stok, Harga, dan Nama secara fleksibel
         let codeMatch = text.match(/(?:kode|barcode)\s+([\w\d\-\.]+)/i);
-        let stockMatch = text.match(/(?:jumlah|stok|isi|tambah)\D+(\d+)/i);
+        let stockMatch = text.match(/(?:jumlah|stok|isi|tambah)\s+(\d+)/i); // <-- Update bagian ini
+        let priceMatch = text.match(/(?:harga|rp|jual)\s+(\d+(?:\.\d+)*)/i);
+        let nameMatch = text.match(/(?:nama|produk|barang)\s+(.*?)(?=\s+(?:kategori|jenis|harga|rp|jual|stok|jumlah|isi|tambah)|$)/i);
+        let catMatch = text.match(/(?:kategori|jenis)\s+(.*?)(?=\s+(?:harga|rp|jual|stok|jumlah|isi|tambah)|$)/i);
         
-        // 2. AMBIL DATA LENGKAP (Nama & Harga) - Mungkin null kalau mode cepat
-        let priceMatch = text.match(/(?:harga|rp|jual)\D+(\d+(?:\.\d+)*)/i);
-        let nameMatch = text.match(/(?:nama|produk|barang)\s+(.*?)\s+(?:kategori|jenis|harga|stok|jumlah)/i);
-        let catMatch = text.match(/(?:kategori|jenis)\s+(.*?)(?:\s+(?:harga|jumlah|stok|$))/i);
         let categories = [];
         if(catMatch) {
             categories = catMatch[1].split(/\s+dan\s+/i).map(cat => capitalize(cat.trim())).filter(cat => cat);
         }
 
-        // Validasi Minimal: KODE wajib ada
         if(!codeMatch) {
             alert("⚠️ Data tidak lengkap! Minimal sebutkan 'Kode [angka]'.");
             return;
@@ -651,45 +650,32 @@
 
         let payload = {
             barcode: codeMatch[1].replace(/[^a-zA-Z0-9]/g, ''),
-            stock: stockMatch ? stockMatch[1] : '1', // Default 1 jika tidak sebut jumlah
+            stock: stockMatch ? stockMatch[1] : '1',
             price: priceMatch ? priceMatch[1].replace(/\./g, '') : null,
             name: nameMatch ? capitalize(nameMatch[1].trim()) : null,
-            categories: categories.length > 0 ? categories : ['Umum']
+            // Fallback Cerdas: Jika user tidak sebut kategori, ambil dari daftar pertama yg ada di DB
+            categories: categories.length > 0 ? categories : (availableCategories.length > 0 ? [availableCategories[0]] : ['Umum'])
         };
 
-        // Sertakan unit dari form (fallback ke 'pcs')
         payload.unit = (document.getElementById('unit') && document.getElementById('unit').value) ? document.getElementById('unit').value : 'pcs';
 
-        // --- CABANG LOGIKA: MODE CEPAT VS MODE LENGKAP ---
-        
         if (!payload.name) {
-            // [MODE CEPAT] User cuma bilang "Kode X Stok Y"
-            // Kita harus cari Nama & Harga dari Database dulu!
-            
-            showToast("🔍 Mencari data barang...", "blue"); // Feedback visual
-            
+            showToast("🔍 Mencari data barang...", "blue"); 
             try {
-                // Panggil API Find yang sudah ada
                 const findUrl = '{{ route("inventory.find") }}?code=' + encodeURIComponent(payload.barcode);
                 const findRes = await fetch(findUrl, { headers: { 'Accept': 'application/json' } });
 
                 if (findRes.ok) {
                     const existingData = await findRes.json();
-                    
-                    // Isi kekosongan data dengan data database
                     payload.name = existingData.name;
-                    payload.price = payload.price || existingData.price; // Pakai harga DB jika user ga sebut harga baru
-                    if(!payload.categories || payload.categories.length === 0) {
-                        payload.categories = existingData.categories || ['Umum'];
+                    payload.price = payload.price || existingData.price;
+                    if(!payload.categories || payload.categories.length === 0 || payload.categories[0] === 'Umum') {
+                        payload.categories = existingData.categories && existingData.categories.length > 0 ? existingData.categories : ['Umum'];
                     }
-
-                    // Update tampilan editor biar user tau sistem nemu barangnya
                     editor.innerHTML += ` <span class="token-key" style="color:green">[FOUND: ${payload.name}]</span>`;
-                    
                 } else {
-                    // Kalau barang belum ada, tapi user tidak sebut nama -> ERROR
                     alert(`❌ Barang dengan kode '${payload.barcode}' belum ada. Harap sebutkan Nama dan Harga untuk mendaftarkannya.`);
-                    return; // Stop, jangan simpan
+                    return; 
                 }
             } catch (e) {
                 alert("Gagal mengecek data barang ke server.");
@@ -697,12 +683,12 @@
             }
         }
 
-        // --- KIRIM KE SERVER (FINAL STORE) ---
         try {
             const response = await fetch('{{ route("inventory.store") }}', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Accept': 'application/json', // <--- FIX KRUSIAL: Agar dapat balasan Error Laravel yg sebenarnya
                     'X-CSRF-TOKEN': '{{ csrf_token() }}'
                 },
                 body: JSON.stringify(payload)
@@ -711,25 +697,26 @@
             if (response.ok) {
                 showToast("✅ Data Berhasil Disimpan!", "green");
                 addDummyRow(payload);
-                editor.innerHTML = ""; // Reset
+                editor.innerHTML = ""; 
                 
                 if (continueRecording) {
                     setTimeout(() => recognition.start(), 500);
                 }
             } else {
+                // Tangkap error validasi dari Laravel dan tampilkan sebagai alert
                 let err = await response.json();
-                alert("Gagal simpan: " + (err.message || "Terjadi kesalahan server"));
+                let errorMsg = err.message || "Terjadi kesalahan server";
+                if (err.errors) {
+                    errorMsg = Object.values(err.errors).flat().join('\n');
+                }
+                alert("Gagal simpan:\n" + errorMsg);
             }
 
         } catch (error) {
             console.error("Error:", error);
-            showToast("Simulasi: Data tersimpan (Offline)", "green");
-            addDummyRow(payload);
-            editor.innerHTML = "";
-            if (continueRecording) setTimeout(() => recognition.start(), 500);
+            alert("Terjadi kesalahan pada sistem atau jaringan internet.");
         }
     }
-
     // Update sedikit Helper Toast biar bisa ganti warna
     function showToast(msg = "Data Berhasil Disimpan!", color = "green") {
         const toast = document.getElementById('toast-notification');
@@ -762,8 +749,8 @@
                 <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">${data.barcode}</td>
                 <td class="px-6 py-4">${data.name}</td>
                 <td class="px-6 py-4">${Array.isArray(data.categories) ? data.categories.join(', ') : data.category}</td>
+                <td class="px-6 py-4">${data.stock} <span class=" text-sm font-bold px-2.5 py-4 rounded">Baru</span></td>
                 <td class="px-6 py-4">Rp ${new Intl.NumberFormat('id-ID').format(data.price)}</td>
-                <td class="px-6 py-4">${data.stock}</td>
                 <td class="px-6 py-4 text-green-600 font-bold">Baru</td>
             `;
             tbody.insertBefore(tr, tbody.firstChild); // Masukkan di paling atas

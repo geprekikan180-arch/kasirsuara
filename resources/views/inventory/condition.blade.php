@@ -90,12 +90,7 @@
                             <td class="p-4">
                                 <div class="flex justify-center items-center gap-4">
                                     
-                                    <button onclick="updateStatus({{ $item->id }}, 'good')" 
-                                            id="btn-good-{{ $item->id }}"
-                                            class="w-6 h-6 rounded-full border-2 border-green-500 transition-all duration-300 hover:scale-110 
-                                            {{ $item->current_condition == 'good' ? 'bg-green-500 shadow-lg shadow-green-200 ring-2 ring-green-100' : 'bg-transparent' }}"
-                                            title="Set Good">
-                                    </button>
+                                    
 
                                     <div class="flex flex-col items-center gap-1">
                                         <label class="text-xs text-gray-500">Rusak</label>
@@ -130,42 +125,6 @@
     </div>
 
     <script>
-        function updateStatus(productId, condition) {
-            if (!confirm('Yakin mengubah kondisi barang menjadi baik?')) {
-                return;
-            }
-            // 1. Visual Feedback Langsung (Biar kerasa cepet)
-            resetButtons(productId);
-            setActiveButton(productId, condition);
-
-            // 2. Kirim ke Database via Fetch API
-            fetch("{{ route('inventory.condition.update') }}", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-                },
-                body: JSON.stringify({
-                    product_id: productId,
-                    condition: condition
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log("Success:", data);
-                if (data.error) {
-                    alert(data.error);
-                    // Reset visual jika error
-                    location.reload();
-                }
-            })
-            .catch((error) => {
-                console.error("Error:", error);
-                alert("Gagal mengupdate kondisi barang.");
-                location.reload();
-            });
-        }
-
         function updateDamage(productId, condition, quantity) {
             quantity = parseInt(quantity);
             if (quantity <= 0) return; // Jangan kirim jika 0 atau kosong
@@ -209,20 +168,6 @@
         }
 
         // Helper: Matikan semua warna tombol di baris itu
-        function resetButtons(id) {
-            document.getElementById(`btn-good-${id}`).classList.remove('bg-green-500', 'shadow-lg', 'shadow-green-200', 'ring-2', 'ring-green-100');
-            document.getElementById(`btn-good-${id}`).classList.add('bg-transparent');
-        }
-
-        // Helper: Nyalakan warna tombol yang diklik
-        function setActiveButton(id, condition) {
-            let btn = document.getElementById(`btn-${condition}-${id}`);
-            let colorClass = 'bg-green-500';
-            let shadowClass = 'shadow-green-200';
-            
-            btn.classList.remove('bg-transparent');
-            btn.classList.add(colorClass, 'shadow-lg', shadowClass, 'ring-2', 'ring-green-100');
-        }
     </script>
 
 </body>

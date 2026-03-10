@@ -42,6 +42,14 @@ class InventoryController extends Controller
 
         $products = $query->orderBy('updated_at', 'desc')->get();
         
+        // ensure no null conditions remain (convert to good)
+        foreach ($products as $p) {
+            if (is_null($p->current_condition)) {
+                $p->current_condition = 'good';
+                $p->save();
+            }
+        }
+        
         // Get categories untuk dropdown filter
         $categories = Category::where('shop_id', $shopId)->pluck('name')->sort()->values();
 
@@ -53,7 +61,7 @@ class InventoryController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'barcode' => 'required|string', // Di form namanya tetap 'barcode'
+            'barcode' => 'required|string',
             'name' => 'required|string',
             'price' => 'required|numeric',
             'stock' => 'required|integer|min:1',
@@ -64,60 +72,164 @@ class InventoryController extends Controller
 
         $shopId = Auth::user()->shop_id;
 
-        // Check if all categories exist for this shop
-        $existingCategories = Category::where('shop_id', $shopId)->whereIn('name', $request->categories)->pluck('name')->toArray();
-        $missingCategories = array_diff($request->categories, $existingCategories);
-        if (!empty($missingCategories)) {
-            return redirect()->back()->withErrors(['categories' => 'Kategori berikut tidak ditemukan: ' . implode(', ', $missingCategories)]);
+        // Logika Pengecekan Kategori Case-Insensitive (Anti-Gagal)
+        $existingCategoriesModels = Category::where('shop_id', $shopId)->get();
+        $matchedCategoryIds = [];
+        $missingCategories = [];
+
+        foreach ($request->categories as $reqCat) {
+            $matched = $existingCategoriesModels->first(function($cat) use ($reqCat) {
+                return strtolower($cat->name) === strtolower($reqCat);
+            });
+            
+            if ($matched) {
+                $matchedCategoryIds[] = $matched->id;
+            } else {
+                $missingCategories[] = $reqCat;
+            }
         }
 
-        $shopId = Auth::user()->shop_id;
+        if (!empty($missingCategories)) {
+            $errorMsg = 'Kategori berikut tidak ditemukan di sistem: ' . implode(', ', $missingCategories);
+            if ($request->expectsJson()) {
+                return response()->json(['message' => $errorMsg], 422);
+            }
+            return redirect()->back()->withErrors(['categories' => $errorMsg]);
+        }
 
-        // --- LOGIKA PENCEGAH TABRAKAN ---
-        // Kita cari berdasarkan kolom 'code' (bukan barcode)
+        // Cari Barang berdasarkan kode
+        // Cari Barang berdasarkan kode
         $existingProduct = Product::where('shop_id', $shopId)
-                                  ->where('code', $request->barcode) // <--- UBAH DISINI
+                                  ->where('code', $request->barcode)
                                   ->first();
 
         if ($existingProduct) {
-            // jika nama berbeda dan user berusaha menambahkan barang baru, kita tolak
-            if (strtolower(trim($existingProduct->name)) !== strtolower(trim($request->name))) {
-                return redirect()->back()->withErrors(['barcode' => "Kode '{$request->barcode}' sudah digunakan untuk barang '{$existingProduct->name}'. Periksa kembali nama atau gunakan kode lain."]);
+            // VALIDASI SENSITIF: Cek apakah nama dari suara cocok dengan database
+            $inputName = strtolower(trim($request->name));
+            $dbName = strtolower(trim($existingProduct->name));
+
+            // Jika nama beda, TOLAK! (Mencegah salah input stok)
+            if ($inputName !== $dbName) {
+                $errorMsg = "Peringatan: Nama tidak sesuai! Kode '{$request->barcode}' terdaftar sebagai '{$existingProduct->name}', bukan '{$request->name}'. Stok gagal ditambahkan.";
+                
+                if ($request->expectsJson()) {
+                    return response()->json(['message' => $errorMsg], 422);
+                }
+                return redirect()->back()->withErrors(['name' => $errorMsg]);
             }
-            // SKENARIO A: BARANG SUDAH ADA -> Tambah Stok
+            
+            // SKENARIO A: Tambah Stok (Karena nama dan kode sudah cocok)
             $existingProduct->stock = $existingProduct->stock + $request->stock;
-
-            // Update info lain (termasuk unit jika user pilih berbeda)
-            $existingProduct->price = $request->price;
-            $existingProduct->name = $request->name;
-            $existingProduct->unit = $request->unit ?? $existingProduct->unit;
-
+            
+            // Opsional: Update harga jika user juga menyebutkan harga baru
+            if ($request->has('price') && $request->price) {
+                $existingProduct->price = $request->price;
+            }
+            
             $existingProduct->save();
 
-            // Update categories
-            $categoryIds = Category::where('shop_id', $shopId)->whereIn('name', $request->categories)->pluck('id');
-            $existingProduct->categories()->sync($categoryIds);
+            // Opsional: Update kategori jika diinputkan
+            if (!empty($matchedCategoryIds)) {
+                $existingProduct->categories()->syncWithoutDetaching($matchedCategoryIds);
+            }
 
-            return redirect()->back()->with('success', "Stok '{$existingProduct->name}' bertambah! Total: {$existingProduct->stock}");
+            $successMsg = "Cocok! Stok '{$existingProduct->name}' berhasil ditambah. Total: {$existingProduct->stock}";
+            if ($request->expectsJson()) {
+                return response()->json(['message' => $successMsg, 'product' => $existingProduct]);
+            }
+            return redirect()->back()->with('success', $successMsg);
+            
         } else {
-            // SKENARIO B: BARANG BARU -> Buat Baru
+            // SKENARIO B: Buat Barang Baru
+            // (Kode skenario B tetap sama seperti sebelumnya...)
             $product = Product::create([
                 'shop_id' => $shopId,
-                'code'    => $request->barcode, // <--- UBAH DISINI: Isi kolom 'code' dengan data 'barcode' dari form
+                'code'    => $request->barcode,
                 'name'    => $request->name,
                 'price'   => $request->price,
                 'stock'   => $request->stock,
                 'unit'    => $request->unit ?? 'pcs',
+                'current_condition' => 'good',
                 'image'   => 'https://via.placeholder.com/150?text='.urlencode($request->name),
             ]);
 
-            // Attach categories
-            $categoryIds = Category::where('shop_id', $shopId)->whereIn('name', $request->categories)->pluck('id');
-            $product->categories()->attach($categoryIds);
+            $product->categories()->attach($matchedCategoryIds);
 
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Produk BARU berhasil disimpan.', 'product' => $product], 201);
+            }
             return redirect()->back()->with('success', 'Produk BARU berhasil disimpan.');
         }
     }
+    // public function store(Request $request)
+    // {
+    //     $request->validate([
+    //         'barcode' => 'required|string', // Di form namanya tetap 'barcode'
+    //         'name' => 'required|string',
+    //         'price' => 'required|numeric',
+    //         'stock' => 'required|integer|min:1',
+    //         'unit' => 'required|string|in:pcs,kg,gram,box,meter,liter',
+    //         'categories' => 'required|array|min:1',
+    //         'categories.*' => 'string',
+    //     ]);
+
+    //     $shopId = Auth::user()->shop_id;
+
+    //     // Check if all categories exist for this shop
+    //     $existingCategories = Category::where('shop_id', $shopId)->whereIn('name', $request->categories)->pluck('name')->toArray();
+    //     $missingCategories = array_diff($request->categories, $existingCategories);
+    //     if (!empty($missingCategories)) {
+    //         return redirect()->back()->withErrors(['categories' => 'Kategori berikut tidak ditemukan: ' . implode(', ', $missingCategories)]);
+    //     }
+
+    //     $shopId = Auth::user()->shop_id;
+
+    //     // --- LOGIKA PENCEGAH TABRAKAN ---
+    //     // Kita cari berdasarkan kolom 'code' (bukan barcode)
+    //     $existingProduct = Product::where('shop_id', $shopId)
+    //                               ->where('code', $request->barcode) // <--- UBAH DISINI
+    //                               ->first();
+
+    //     if ($existingProduct) {
+    //         // jika nama berbeda dan user berusaha menambahkan barang baru, kita tolak
+    //         if (strtolower(trim($existingProduct->name)) !== strtolower(trim($request->name))) {
+    //             return redirect()->back()->withErrors(['barcode' => "Kode '{$request->barcode}' sudah digunakan untuk barang '{$existingProduct->name}'. Periksa kembali nama atau gunakan kode lain."]);
+    //         }
+    //         // SKENARIO A: BARANG SUDAH ADA -> Tambah Stok
+    //         $existingProduct->stock = $existingProduct->stock + $request->stock;
+
+    //         // Update info lain (termasuk unit jika user pilih berbeda)
+    //         $existingProduct->price = $request->price;
+    //         $existingProduct->name = $request->name;
+    //         $existingProduct->unit = $request->unit ?? $existingProduct->unit;
+
+    //         $existingProduct->save();
+
+    //         // Update categories
+    //         $categoryIds = Category::where('shop_id', $shopId)->whereIn('name', $request->categories)->pluck('id');
+    //         $existingProduct->categories()->sync($categoryIds);
+
+    //         return redirect()->back()->with('success', "Stok '{$existingProduct->name}' bertambah! Total: {$existingProduct->stock}");
+    //     } else {
+    //         // SKENARIO B: BARANG BARU -> Buat Baru
+    //         $product = Product::create([
+    //             'shop_id' => $shopId,
+    //             'code'    => $request->barcode, // <--- UBAH DISINI: Isi kolom 'code' dengan data 'barcode' dari form
+    //             'name'    => $request->name,
+    //             'price'   => $request->price,
+    //             'stock'   => $request->stock,
+    //             'unit'    => $request->unit ?? 'pcs',
+    //             'current_condition' => 'good',
+    //             'image'   => 'https://via.placeholder.com/150?text='.urlencode($request->name),
+    //         ]);
+
+    //         // Attach categories
+    //         $categoryIds = Category::where('shop_id', $shopId)->whereIn('name', $request->categories)->pluck('id');
+    //         $product->categories()->attach($categoryIds);
+
+    //         return redirect()->back()->with('success', 'Produk BARU berhasil disimpan.');
+    //     }
+    // }
 
     // Tambahkan method ini di dalam class InventoryController
 

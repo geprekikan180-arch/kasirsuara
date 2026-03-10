@@ -60,7 +60,7 @@
         </div>
 
         <div class="flex-1 overflow-y-auto p-6 pt-0 no-scrollbar">
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 pb-20" id="product-list">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pb-20" id="product-list">
                 @foreach($products as $product)
                 <button onclick="addToCart({{ $product->id }}, '{{ $product->name }}', {{ $product->price }}, '{{ $product->code }}', '{{ $product->image }}')" 
                     class="bg-white p-2 rounded-lg shadow-sm hover:shadow-lg transition-all text-left group border border-transparent hover:border-blue-500 relative overflow-hidden flex flex-col h-full">
@@ -69,7 +69,7 @@
                         {{ $product->code }}
                     </div>
 
-                    <div class="h-15 w-full bg-gray-50 rounded-lg mb-2 flex items-center justify-center overflow-hidden relative">
+                    <div class="h-20 w-full bg-gray-50 rounded-lg mb-2 flex items-center justify-center overflow-hidden relative">
                         @if($product->image)
                              <img src="{{ $product->image }}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300">
                         @else
@@ -83,10 +83,10 @@
                     </div>
                     
                     <div class="flex-1 flex flex-col justify-between">
-                        <h3 class="font-bold text-gray-800 text-sm leading-tight line-clamp-2 mb-1 group-hover:text-blue-600">
-                            {{ $product->name }}
+                        <h3 class="font-bold text-gray-800 text-sm leading-tight line-clamp-2 mb-1 group-hover:text-blue-600 flex justify-between">
+                            <span>{{ $product->name }}</span>
+                            <span class="text-[15px] text-gray-500">{{ $product->stock }} {{ $product->unit }}</span>
                         </h3>
-                        <p class="font-bold text-blue-600 text-sm">Rp {{ $product->stock }}</p>
                         <p class="font-bold text-blue-600 text-sm">Rp {{ number_format($product->price, 0, ',', '.') }}</p>
                     </div>
                 </button>
@@ -728,9 +728,7 @@
                     : `<i class="fa-solid fa-box-open text-3xl text-gray-300"></i>`;
 
                 button.innerHTML = `
-                    <div class="absolute top-1 right-1 bg-gray-100 text-gray-500 text-[8px] font-bold px-1.5 py-0.5 rounded">
-                        ${product.code}
-                    </div>
+                    
 
                     <div class="h-20 w-full bg-gray-50 rounded-lg mb-2 flex items-center justify-center overflow-hidden relative">
                         ${imgDisplay}
@@ -742,13 +740,14 @@
                     </div>
                     
                     <div class="flex-1 flex flex-col justify-between">
-                        <h3 class="font-bold text-gray-800 text-sm leading-tight line-clamp-2 mb-1 group-hover:text-blue-600">
-                            ${product.name}
+                        <h3 class="font-bold text-gray-800 text-sm leading-tight line-clamp-2 mb-1 group-hover:text-blue-600 flex justify-between">
+                            <span>${product.name}</span>
+                            <span class="text-[10px] text-gray-500 pr-2">${product.stock} ${product.unit}</span>
                         </h3>
                         <div class="mb-1">
                             ${(product.categories || []).map(c => {
                                 const col = jsCategoryColor(c.name || c);
-                                return `<span class="inline-block px-1 py-0.5 rounded-full text-[10px] font-semibold bg-${col}-100 text-${col}-700 mr-1">${c.name || c}</span>`;
+                                return `<span class="inline-block px-1 py-0.5 rounded-full text-[8px] font-semibold bg-${col}-100 text-${col}-700 mr-1">${c.name || c}</span>`;
                             }).join('')}
                         </div>
                         <p class="font-bold text-blue-600 text-sm">Rp ${new Intl.NumberFormat('id-ID').format(product.price)}</p>
