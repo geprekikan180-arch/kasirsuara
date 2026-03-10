@@ -1,0 +1,25 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class TransactionDetail extends Model
+{
+    use HasFactory;
+
+    protected $guarded = ['id'];
+
+    // Relasi ke tabel induk transaksi
+    public function transaction()
+    {
+        return $this->belongsTo(Transaction::class);
+    }
+
+    // Relasi ke produk (untuk ambil nama barang terlaris)
+    public function product()
+    {
+        return $this->belongsTo(Product::class);
+    }
+}
